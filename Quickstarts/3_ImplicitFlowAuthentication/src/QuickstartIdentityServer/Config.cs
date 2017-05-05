@@ -40,7 +40,7 @@ namespace QuickstartIdentityServer
                     ClientId = "client",
                     AllowedGrantTypes = GrantTypes.ClientCredentials,
 
-                    ClientSecrets = 
+                    ClientSecrets =
                     {
                         new Secret("secret".Sha256())
                     },
@@ -75,6 +75,24 @@ namespace QuickstartIdentityServer
                         IdentityServerConstants.StandardScopes.OpenId,
                         IdentityServerConstants.StandardScopes.Profile
                     }
+                },
+                new Client
+                {
+                    ClientId = "js",
+                    ClientName = "JavaScript Client",
+                    AllowedGrantTypes = GrantTypes.Implicit,
+                    AllowAccessTokensViaBrowser = true,
+
+                    RedirectUris =           { "http://localhost:5003/callback.html", "http://localhost:5004/callback.html" },
+                    PostLogoutRedirectUris = { "http://localhost:5003/index.html", "http://localhost:5004/index.html" },
+                    AllowedCorsOrigins =     { "http://localhost:5003", "http://localhost:5004" },
+
+                    AllowedScopes =
+                    {
+                        IdentityServerConstants.StandardScopes.OpenId,
+                        IdentityServerConstants.StandardScopes.Profile,
+                        "api1"
+                    }
                 }
             };
         }
@@ -103,7 +121,7 @@ namespace QuickstartIdentityServer
 
                     Claims = new List<Claim>
                     {
-                        new Claim("name", "Bob"),
+                        new Claim("name", "Bob", "String", "js"),
                         new Claim("website", "https://bob.com")
                     }
                 }

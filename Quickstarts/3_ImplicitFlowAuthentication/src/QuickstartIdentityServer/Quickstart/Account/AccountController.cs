@@ -16,6 +16,9 @@ using System.Security.Claims;
 using System.Security.Principal;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
+using QuickstartIdentityServer.Models;
+using Microsoft.Extensions.Logging;
 
 namespace IdentityServer4.Quickstart.UI
 {
@@ -27,19 +30,25 @@ namespace IdentityServer4.Quickstart.UI
     [SecurityHeaders]
     public class AccountController : Controller
     {
-        private readonly TestUserStore _users;
+        private readonly UserManager<ApplicationUser> _users;
+        private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly IIdentityServerInteractionService _interaction;
         private readonly AccountService _account;
+        private readonly ILogger _logger;
 
         public AccountController(
             IIdentityServerInteractionService interaction,
             IClientStore clientStore,
             IHttpContextAccessor httpContextAccessor,
-            TestUserStore users = null)
+            SignInManager<ApplicationUser> signInManager,
+            ILoggerFactory loggerFactory,
+            UserManager<ApplicationUser> users = null)
         {
             // if the TestUserStore is not in DI, then we'll just use the global users collection
-            _users = users ?? new TestUserStore(TestUsers.Users);
+            _users = users;
+            _signInManager = signInManager;
             _interaction = interaction;
+            _logger = loggerFactory.CreateLogger<AccountController>();
             _account = new AccountService(interaction, httpContextAccessor, clientStore);
         }
 
@@ -69,8 +78,16 @@ namespace IdentityServer4.Quickstart.UI
         {
             if (ModelState.IsValid)
             {
+                var newUser = new ApplicationUser { UserName = model.Username, Email = model.Username };
+                var result = await _users.CreateAsync(newUser, model.Password);
+                if (result.Succeeded)
+                {
+                    await _signInManager.SignInAsync(newUser, isPersistent: false);
+                    _logger.LogInformation(3, "User created a new account with password.");
+                }
+                var result2 = await _signInManager.PasswordSignInAsync(model.Username, model.Password, model.RememberLogin, lockoutOnFailure: false);
                 // validate username/password against in-memory store
-                if (_users.ValidateCredentials(model.Username, model.Password))
+                if (result2.Succeeded)
                 {
                     AuthenticationProperties props = null;
                     // only set explicit expiration here if persistent. 
@@ -85,8 +102,8 @@ namespace IdentityServer4.Quickstart.UI
                     };
 
                     // issue authentication cookie with subject ID and username
-                    var user = _users.FindByUsername(model.Username);
-                    await HttpContext.Authentication.SignInAsync(user.SubjectId, user.Username, props);
+                    var user = _users.FindByEmailAsync(model.Username);
+                    await HttpContext.Authentication.SignInAsync(user.Result.Id, user.Result.Email, props);
 
                     // make sure the returnUrl is still valid, and if yes - redirect back to authorize endpoint
                     if (_interaction.IsValidReturnUrl(model.ReturnUrl))
@@ -193,83 +210,6 @@ namespace IdentityServer4.Quickstart.UI
                 };
                 return new ChallengeResult(provider, props);
             }
-        }
-
-        /// <summary>
-        /// Post processing of external authentication
-        /// </summary>
-        [HttpGet]
-        public async Task<IActionResult> ExternalLoginCallback(string returnUrl)
-        {
-            // read external identity from the temporary cookie
-            var info = await HttpContext.Authentication.GetAuthenticateInfoAsync(IdentityServerConstants.ExternalCookieAuthenticationScheme);
-            var tempUser = info?.Principal;
-            if (tempUser == null)
-            {
-                throw new Exception("External authentication error");
-            }
-
-            // retrieve claims of the external user
-            var claims = tempUser.Claims.ToList();
-
-            // try to determine the unique id of the external user - the most common claim type for that are the sub claim and the NameIdentifier
-            // depending on the external provider, some other claim type might be used
-            var userIdClaim = claims.FirstOrDefault(x => x.Type == JwtClaimTypes.Subject);
-            if (userIdClaim == null)
-            {
-                userIdClaim = claims.FirstOrDefault(x => x.Type == ClaimTypes.NameIdentifier);
-            }
-            if (userIdClaim == null)
-            {
-                throw new Exception("Unknown userid");
-            }
-
-            // remove the user id claim from the claims collection and move to the userId property
-            // also set the name of the external authentication provider
-            claims.Remove(userIdClaim);
-            var provider = info.Properties.Items["scheme"];
-            var userId = userIdClaim.Value;
-
-            // check if the external user is already provisioned
-            var user = _users.FindByExternalProvider(provider, userId);
-            if (user == null)
-            {
-                // this sample simply auto-provisions new external user
-                // another common approach is to start a registrations workflow first
-                user = _users.AutoProvisionUser(provider, userId, claims);
-            }
-
-            var additionalClaims = new List<Claim>();
-
-            // if the external system sent a session id claim, copy it over
-            var sid = claims.FirstOrDefault(x => x.Type == JwtClaimTypes.SessionId);
-            if (sid != null)
-            {
-                additionalClaims.Add(new Claim(JwtClaimTypes.SessionId, sid.Value));
-            }
-
-            // if the external provider issued an id_token, we'll keep it for signout
-            AuthenticationProperties props = null;
-            var id_token = info.Properties.GetTokenValue("id_token");
-            if (id_token != null)
-            {
-                props = new AuthenticationProperties();
-                props.StoreTokens(new[] { new AuthenticationToken { Name = "id_token", Value = id_token } });
-            }
-
-            // issue authentication cookie for user
-            await HttpContext.Authentication.SignInAsync(user.SubjectId, user.Username, provider, props, additionalClaims.ToArray());
-
-            // delete temporary cookie used during external authentication
-            await HttpContext.Authentication.SignOutAsync(IdentityServerConstants.ExternalCookieAuthenticationScheme);
-
-            // validate return URL and redirect back to authorization endpoint
-            if (_interaction.IsValidReturnUrl(returnUrl))
-            {
-                return Redirect(returnUrl);
-            }
-
-            return Redirect("~/");
         }
     }
 }

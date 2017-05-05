@@ -26,6 +26,16 @@ namespace Api
 
         public void ConfigureServices(IServiceCollection services)
         {
+            services.AddCors(options=>
+            {
+                // this defines a CORS policy called "default"
+                options.AddPolicy("default", policy =>
+                {
+                    policy.WithOrigins("http://localhost:5003")
+                        .AllowAnyHeader()
+                        .AllowAnyMethod();
+                });
+            });
             services.AddMvcCore()
                 .AddAuthorization()
                 .AddJsonFormatters();
@@ -35,7 +45,7 @@ namespace Api
         {
             loggerFactory.AddConsole(Configuration.GetSection("Logging"));
             loggerFactory.AddDebug();
-
+            app.UseCors("default");
             app.UseIdentityServerAuthentication(new IdentityServerAuthenticationOptions
             {
                 Authority = "http://localhost:5000",

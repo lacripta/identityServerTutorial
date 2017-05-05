@@ -5,6 +5,7 @@
 using IdentityServer4.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authorization;
 
 namespace IdentityServer4.Quickstart.UI
 {
@@ -17,7 +18,7 @@ namespace IdentityServer4.Quickstart.UI
         {
             _interaction = interaction;
         }
-
+        
         public IActionResult Index()
         {
             return View();
